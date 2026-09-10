@@ -4,6 +4,7 @@ title = Atlas E-Lkw Tracker
 package.name = elkwtracker
 package.domain = org.elkw
 source.include_exts = py,png,jpg,kv,atlas,json
+source.dir = .
 version = 0.1
 requirements = python3,kivy,requests,urllib3,certifi,idna,charset-normalizer
 orientation = portrait
