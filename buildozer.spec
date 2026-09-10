@@ -10,6 +10,7 @@ requirements = python3,kivy,requests,urllib3,certifi,idna,charset-normalizer
 orientation = portrait
 android.permissions = INTERNET,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,FOREGROUND_SERVICE
 android.api = 33
+android.accept_sdk_license = True
 android.minapi = 21
 android.archs = arm64-v8a
 
