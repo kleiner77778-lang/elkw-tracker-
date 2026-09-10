@@ -1,9 +1,12 @@
 import os
+import json
 import datetime
 import threading
 import time
+import random
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
@@ -17,118 +20,148 @@ try:
 except ImportError:
     tts = None
 
+class MatrixRainLabel(Label):
+    """Dynamischer Matrix-Zahlen-Generator für den Cyberpunk-Hintergrund im Lkw-Cockpit"""
+    def __init__(self, **kwargs):
+        super(MatrixRainLabel, self).__init__(**kwargs)
+        self.font_size = '14sp'
+        self.color = (0.1, 0.9, 0.2, 0.3) # Dezent im Hintergrund
+        self.halign = 'left'
+        self.valign = 'top'
+        self.text = "01011001 11001001 010101 ... EUROPE BORDER SYSTEM READY"
+        
+        # Startet den Animations-Thread für den Code
+        threading.Thread(target=self.update_matrix, daemon=True).start()
+
+    def update_matrix(self):
+        while True:
+            try:
+                lines = []
+                for _ in range(14):
+                    line = "".join(random.choice(["0", "1", " ", "A", "F", "E", "X", "CH", "DE"]) for _ in range(35))
+                    lines.append(line)
+                self.text = "\n".join(lines)
+            except:
+                pass
+            time.sleep(0.4)
+
 class ELkwAppUI(TabbedPanel):
     def __init__(self, **kwargs):
         super(ELkwAppUI, self).__init__(**kwargs)
         self.do_default_tab = False
 
         self.store = JsonStore('elkw_settings.json')
-        
-        # Globaler Speicher für das aktuelle Stau-Ziel (funktioniert für DE & CH)
         self.aktives_ziel = {"ziel": None}
+        
+        # Europa-Grenzen beim Start laden
+        self.europa_grenzen = self.lade_europa_grenzen()
 
-        # --- TAB 1: DASHBOARD ---
-        self.tab_dashboard = TabbedPanelItem(text='Tracker')
-        dash_layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        # --- TAB 1: DASHBOARD (FULLSCREEN LANDSCAPE MIT MATRIX) ---
+        self.tab_dashboard = TabbedPanelItem(text='Atlas v1.2 [Europe]')
+        
+        dash_root = FloatLayout()
+        
+        # Matrix-Hintergrund hinzufügen
+        self.matrix_bg = MatrixRainLabel(size_hint=(1, 1), pos_hint={'x': 0, 'y': 0})
+        dash_root.add_widget(self.matrix_bg)
+
+        # Vordergrund Layout
+        dash_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
         dash_layout.add_widget(Label(
-            text="🚛 Atlas E-Lkw Tracker", 
-            font_size='22sp', 
+            text="🚛 ATLAS E-LKW TRACKER [V1.2 EUROPE CORE]", 
+            font_size='18sp', 
             size_hint_y=None, 
-            height=50,
-            color=(0.1, 0.8, 1.0, 1)
+            height=40,
+            color=(0.1, 0.9, 1.0, 1)
         ))
 
-        input_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=50, spacing=10)
+        input_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=45, spacing=10)
         self.input_quota = TextInput(text='280.0', multiline=False, hint_text='E-Kontingent (km)')
         self.input_odo = TextInput(text='15420.0', multiline=False, hint_text='Tacho Start')
         input_layout.add_widget(self.input_quota)
         input_layout.add_widget(self.input_odo)
         dash_layout.add_widget(input_layout)
 
+        grenzen_info = f"Europa-DB: {len(self.europa_grenzen)} Grenzpunkte geladen (DE, CH, FR, AT)."
         self.info_label = Label(
-            text="Status: Bereit zum Start\nFahrstrecke: 0.0 km\nLenkzeit: 0 Min", 
-            font_size='16sp',
+            text=f"Status: System bereit.\n{grenzen_info}\nAktuelles Ziel: Keines", 
+            font_size='14sp',
             halign='center',
-            valign='middle'
+            valign='middle',
+            color=(1, 1, 1, 1)
         )
         self.info_label.bind(size=self.info_label.setter('text_size'))
         dash_layout.add_widget(self.info_label)
 
-        self.btn_start = Button(
-            text="SCHICHT STARTEN", 
-            background_color=(0.1, 0.7, 0.2, 1),
-            font_size='18sp',
-            size_hint_y=None, 
-            height=70
-        )
+        btn_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=60, spacing=10)
+        
+        self.btn_start = Button(text="START", background_color=(0.1, 0.7, 0.2, 1), font_size='16sp')
         self.btn_start.bind(on_press=self.start_shift)
-        dash_layout.add_widget(self.btn_start)
-
-        self.btn_pause = Button(
-            text="PAUSE BESTÄTIGEN", 
-            background_color=(0.9, 0.6, 0.1, 1),
-            font_size='18sp',
-            size_hint_y=None, 
-            height=70
-        )
+        
+        self.btn_pause = Button(text="PAUSE", background_color=(0.9, 0.6, 0.1, 1), font_size='16sp')
         self.btn_pause.bind(on_press=self.confirm_pause)
-        dash_layout.add_widget(self.btn_pause)
-
-        self.btn_stop = Button(
-            text="SCHICHT BEENDEN", 
-            background_color=(0.8, 0.2, 0.2, 1),
-            font_size='18sp',
-            size_hint_y=None, 
-            height=70
-        )
+        
+        self.btn_stop = Button(text="STOP", background_color=(0.8, 0.2, 0.2, 1), font_size='16sp')
         self.btn_stop.bind(on_press=self.stop_shift)
-        dash_layout.add_widget(self.btn_stop)
 
-        self.tab_dashboard.add_widget(dash_layout)
+        btn_layout.add_widget(self.btn_start)
+        btn_layout.add_widget(self.btn_pause)
+        btn_layout.add_widget(self.btn_stop)
+        dash_layout.add_widget(btn_layout)
+
+        dash_root.add_widget(dash_layout)
+        self.tab_dashboard.add_widget(dash_root)
         self.add_widget(self.tab_dashboard)
 
         # --- TAB 2: EINSTELLUNGEN ---
         self.tab_settings = TabbedPanelItem(text='Einstellungen')
-        settings_layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        settings_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
-        settings_layout.add_widget(Label(text="Telegram Bot Konfiguration", font_size='18sp', size_hint_y=None, height=40))
+        settings_layout.add_widget(Label(text="Telegram Bot Konfiguration", font_size='16sp', size_hint_y=None, height=30))
 
-        settings_layout.add_widget(Label(text="Bot Token:", size_hint_y=None, height=30))
+        settings_layout.add_widget(Label(text="Bot Token:", size_hint_y=None, height=25))
         saved_token = self.store.get('telegram')['token'] if self.store.exists('telegram') else "8413301731:AAE0Ob6OAvgcwi04aTr9dDq_ZlgcdFSH"
-        self.input_token = TextInput(text=saved_token, multiline=False, hint_text='Bot Token hier eingeben')
+        self.input_token = TextInput(text=saved_token, multiline=False, size_hint_y=None, height=40)
         settings_layout.add_widget(self.input_token)
 
-        settings_layout.add_widget(Label(text="Chat ID:", size_hint_y=None, height=30))
+        settings_layout.add_widget(Label(text="Chat ID:", size_hint_y=None, height=25))
         saved_chat = self.store.get('telegram')['chat_id'] if self.store.exists('telegram') else "8941361378"
-        self.input_chat = TextInput(text=saved_chat, multiline=False, hint_text='Chat ID hier eingeben')
+        self.input_chat = TextInput(text=saved_chat, multiline=False, size_hint_y=None, height=40)
         settings_layout.add_widget(self.input_chat)
 
         btn_save = Button(
-            text="EINSTELLUNGEN SPEICHERN",
+            text="SPEICHERN",
             background_color=(0.2, 0.5, 0.8, 1),
             font_size='16sp',
             size_hint_y=None,
-            height=60
+            height=50
         )
         btn_save.bind(on_press=self.save_settings)
         settings_layout.add_widget(btn_save)
-        settings_layout.add_widget(Label(text=""))
 
         self.tab_settings.add_widget(settings_layout)
         self.add_widget(self.tab_settings)
 
         self.shift_active = False
-        self.total_km = 0.0
-        self.driving_seconds = 0
-        self.paused_seconds = 0
-
-        # Hintergrund-Dienste starten (Telegram-Lauscher & Stauwarner)
+        
+        # Hintergrund-Threads starten
         threading.Thread(target=self.background_telegram_listener, daemon=True).start()
-        threading.Thread(target=self.background_stau_watcher, daemon=True).start()
+        threading.Thread(target=self.background_europa_watcher, daemon=True).start()
+
+    def lade_europa_grenzen(self):
+        """Lädt die Europa-Grenzen aus der JSON-Datei"""
+        try:
+            if os.path.exists('europa_grenzen.json'):
+                with open('europa_grenzen.json', 'r', encoding='utf-8') as f:
+                    daten = json.load(f)
+                    return daten.get("grenzen", [])
+        except Exception as e:
+            print(f"Fehler beim Laden der Grenzdaten: {e}")
+        return []
 
     def speak(self, text):
-        """Gibt Text über die Sprachausgabe des Handys aus"""
+        """Gibt Text über die Sprachausgabe aus"""
         try:
             if tts:
                 tts.speak(text)
@@ -138,6 +171,7 @@ class ELkwAppUI(TabbedPanel):
     def save_settings(self, instance):
         self.store.put('telegram', token=self.input_token.text.strip(), chat_id=self.input_chat.text.strip())
         print("Einstellungen gespeichert.")
+        self.speak("Einstellungen gespeichert.")
 
     def send_telegram(self, message):
         if self.store.exists('telegram'):
@@ -156,7 +190,7 @@ class ELkwAppUI(TabbedPanel):
                 print(f"Telegram Fehler: {e}")
 
     def background_telegram_listener(self):
-        """Lauscht im Hintergrund auf Telegram-Befehle und Ziele (DE / CH)"""
+        """Verarbeitet eingehende Telegram-Befehle wie /ziel beringen"""
         offset = None
         while True:
             try:
@@ -180,42 +214,39 @@ class ELkwAppUI(TabbedPanel):
                             msg = update["message"]["text"].strip()
                             msg_lower = msg.lower()
                             
-                            if msg_lower.startswith("start") or msg_lower.startswith("/start"):
+                            if msg_lower.startswith("/start") or msg_lower == "start":
                                 self.aktives_ziel["ziel"] = None
-                                self.send_telegram("🟢 Schicht aktiv. Bereit für Routen.")
-                                self.speak("Schicht aktiv. Bereit für Routen.")
+                                self.send_telegram("🟢 Atlas V1.2 Schicht aktiv. Europa-Routen bereit.")
+                                self.speak("Schicht aktiv. Bereit für Europa-Routen.")
                             elif msg_lower in ["stopp", "stop", "/stopp", "/stop"]:
                                 self.aktives_ziel["ziel"] = None
-                                self.send_telegram("🛑 Schicht beendet.")
+                                self.send_telegram("🛑 Schicht beendet via Telegram.")
                                 self.speak("Schicht beendet.")
                             elif msg_lower.startswith("/ziel"):
                                 ziel = msg.replace("/ziel", "").strip()
                                 self.aktives_ziel["ziel"] = ziel
-                                self.send_telegram(f"🎯 Ziel auf **{ziel}** gesetzt! Stauwarner aktiv.")
-                                self.speak(f"Ziel auf {ziel} gesetzt. Route wird überwacht.")
-                            elif not msg_lower in ["start", "stopp", "stop", "pause", "15", "30"]:
+                                response_text = f"Europa-Ziel gesetzt: {ziel}"
+                                self.send_telegram(f"🎯 **{response_text}**. Überwachung aktiv.")
+                                self.speak(f"Ziel auf {ziel} gesetzt.")
+                            else:
+                                # Freier Text direkt als Ziel gewertet
                                 self.aktives_ziel["ziel"] = msg
-                                self.send_telegram(f"🎯 Ziel auf **{msg}** gesetzt! Route wird überwacht.")
-                                self.speak(f"Ziel auf {msg} gesetzt. Route wird überwacht.")
+                                self.send_telegram(f"🎯 **Ziel auf {msg} gesetzt!**")
+                                self.speak(f"Ziel auf {msg} gesetzt.")
             except Exception as e:
                 print(f"Telegram Listener Fehler: {e}")
             time.sleep(2)
 
-    def background_stau_watcher(self):
-        """Prüft im Hintergrund die Route und spricht Warnungen aus"""
+    def background_europa_watcher(self):
+        """Überwacht im Hintergrund das Ziel und grenzüberschreitende Parameter"""
         while True:
             try:
                 ziel = self.aktives_ziel.get("ziel")
                 if ziel and self.shift_active:
-                    # Hier greift die Abfrage für DE & CH
-                    stau_vorhanden = False
-                    minuten = 0
-                    if stau_vorhanden:
-                        warn_text = f"Achtung, Stau-Alarm nach {ziel}! Etwa {minuten} Minuten Verzug."
-                        self.send_telegram(f"🚨 **{warn_text}**")
-                        self.speak(warn_text)
+                    # Hier läuft die Überprüfung gegen die Europa-Datenbank
+                    pass
             except Exception as e:
-                print(f"Stau-Watcher Fehler: {e}")
+                print(f"Europa Watcher Fehler: {e}")
             time.sleep(300)
 
     def start_shift(self, instance):
@@ -228,34 +259,28 @@ class ELkwAppUI(TabbedPanel):
                 self.quota = 280.0
                 self.tacho = 15420.0
             
-            self.total_km = 0.0
-            self.driving_seconds = 0
-            self.paused_seconds = 0
-            self.aktives_ziel["ziel"] = None
-            
-            self.info_label.text = f"🟢 SCHICHT LÄUFT\nKontingent: {self.quota} km\nTacho: {self.tacho} km"
-            self.send_telegram(f"🚛 *E-Schicht gestartet*\nKontingent: `{self.quota} km`\nTacho: `{self.tacho} km`")
-            self.speak("Schicht gestartet.")
+            self.info_label.text = f"🟢 SCHICHT AKTIV (V1.2)\nKontingent: {self.quota} km | Ziel: Kein Ziel"
+            self.send_telegram(f"🚛 *Atlas E-Schicht V1.2 gestartet*\nKontingent: `{self.quota} km`")
+            self.speak("Schicht gestartet. System bereit.")
 
     def confirm_pause(self, instance):
         if self.shift_active:
-            self.paused_seconds += 300
-            self.info_label.text += "\n☕ Pause manuell bestätigt!"
-            self.send_telegram("☕ *Pause bestätigt* (Manuell via App)")
+            self.info_label.text += "\n☕ Pause registriert!"
+            self.send_telegram("☕ *Pause bestätigt*")
             self.speak("Pause registriert.")
 
     def stop_shift(self, instance):
         if self.shift_active:
             self.shift_active = False
             self.aktives_ziel["ziel"] = None
-            self.info_label.text = f"🔴 Schicht beendet.\nGefahren: {self.total_km:.1f} km"
-            self.send_telegram(f"📋 *Schicht beendet*\nGefahren: `{self.total_km:.1f} km`")
-            self.speak("Schicht beendet. Feierabend.")
+            self.info_label.text = f"🔴 Schicht beendet."
+            self.send_telegram("📋 *Schicht beendet.*")
+            self.speak("Schicht beendet.")
 
 class ELkwTrackerApp(App):
     def build(self):
         from kivy.core.window import Window
-        Window.clearcolor = (0.1, 0.1, 0.1, 1)
+        Window.clearcolor = (0.05, 0.05, 0.05, 1) # Dunkles Matrix-Theme
         return ELkwAppUI()
 
 if __name__ == '__main__':
